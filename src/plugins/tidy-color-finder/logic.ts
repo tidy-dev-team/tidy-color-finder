@@ -1,11 +1,16 @@
 /// <reference types="@figma/plugin-typings" />
 
 import {
-  TidyColorFinderAction,
+  ListPagesResult,
   ScanColorsPayload,
   ScanColorsResult,
-  FoundColor,
+  ScanScope,
+  ColorUsage,
+  TidyColorFinderAction,
 } from "./types";
+import { collectUsages } from "./utils/scan";
+import { buildColorInventory } from "./utils/inventory";
+import { buildInventoryPage } from "./utils/render";
 
 /**
  * Tidy Color Finder handler — processes messages from the UI.
@@ -13,11 +18,6 @@ import {
  * Signature matches the parent Tidy DS Toolbox module contract
  * `(action, payload, figma?) => Promise<any>` so it can be wired into the
  * toolbox's moduleHandlers without changes.
- *
- * NOTE: the scan below is a deliberately-thin PLACEHOLDER that proves the
- * UI -> logic -> figma -> UI round trip. The real "tidy" semantics (e.g.
- * flagging hardcoded colors that should be variables/styles) are not yet
- * decided — see the module README / open question.
  */
 export async function tidyColorFinderHandler(
   action: string,
@@ -25,8 +25,14 @@ export async function tidyColorFinderHandler(
   _figma?: PluginAPI,
 ): Promise<any> {
   switch (action as TidyColorFinderAction) {
+    case "list-pages":
+      return listPages();
+
     case "scan-colors":
-      return scanColors(payload as ScanColorsPayload);
+      return await scanColors(payload as ScanColorsPayload);
+
+    case "show-page":
+      return await showPage(payload as { pageId: string });
 
     default:
       console.warn(`Unknown action: ${action}`);
@@ -34,65 +40,139 @@ export async function tidyColorFinderHandler(
   }
 }
 
-function scanColors(payload: ScanColorsPayload): ScanColorsResult {
-  const scope = payload?.scope ?? "selection";
-
-  const roots: readonly SceneNode[] =
-    scope === "selection" && figma.currentPage.selection.length > 0
-      ? figma.currentPage.selection
-      : figma.currentPage.children;
-
-  const counts = new Map<string, number>();
-  let scannedNodes = 0;
-
-  const visit = (node: SceneNode) => {
-    scannedNodes++;
-    collectSolidPaints(node, counts);
-    if ("children" in node) {
-      for (const child of node.children) {
-        visit(child);
-      }
-    }
+function listPages(): ListPagesResult {
+  const currentId = figma.currentPage.id;
+  return {
+    pages: figma.root.children.map((page) => ({
+      id: page.id,
+      name: page.name,
+      isCurrent: page.id === currentId,
+    })),
   };
+}
 
-  for (const root of roots) {
-    visit(root);
+interface ResolvedScope {
+  pages: PageNode[];
+  label: string;
+  // When set, only these top-level nodes are scanned (current-selection).
+  selection?: readonly SceneNode[];
+}
+
+function resolveScope(scope: ScanScope): ResolvedScope {
+  switch (scope.mode) {
+    case "current-page":
+      return { pages: [figma.currentPage], label: "Current page" };
+
+    case "selected-pages": {
+      const ids = new Set(scope.pageIds ?? []);
+      const pages = figma.root.children.filter((p) => ids.has(p.id));
+      return {
+        pages,
+        label: `${pages.length} page${pages.length === 1 ? "" : "s"}`,
+      };
+    }
+
+    case "all-pages":
+      return { pages: [...figma.root.children], label: "All pages" };
+
+    case "current-selection":
+      return {
+        pages: [figma.currentPage],
+        label: "Selection",
+        selection: figma.currentPage.selection,
+      };
+
+    default:
+      return { pages: [figma.currentPage], label: "Current page" };
+  }
+}
+
+async function loadPage(page: PageNode): Promise<void> {
+  const maybeLoad = (page as unknown as { loadAsync?: () => Promise<void> })
+    .loadAsync;
+  if (typeof maybeLoad === "function") {
+    await maybeLoad.call(page);
+  }
+}
+
+async function scanColors(
+  payload: ScanColorsPayload,
+): Promise<ScanColorsResult> {
+  const { scope, options } = payload;
+  const resolved = resolveScope(scope);
+  const totalPages = resolved.pages.length;
+
+  const allUsages: ColorUsage[] = [];
+  let otherSkipped = 0;
+  let cumulativeNodes = 0;
+  let pagesScanned = 0;
+
+  for (const page of resolved.pages) {
+    await loadPage(page);
+
+    const roots: readonly SceneNode[] = resolved.selection
+      ? resolved.selection
+      : page.children;
+
+    const result = await collectUsages(roots, options, (nodesScanned) => {
+      figma.ui.postMessage({
+        type: "progress",
+        payload: {
+          pagesScanned,
+          totalPages,
+          nodesScanned: cumulativeNodes + nodesScanned,
+        },
+      });
+    });
+
+    allUsages.push(...result.usages);
+    otherSkipped += result.otherSkipped;
+    cumulativeNodes += result.nodesScanned;
+    pagesScanned += 1;
+
+    figma.ui.postMessage({
+      type: "progress",
+      payload: { pagesScanned, totalPages, nodesScanned: cumulativeNodes },
+    });
   }
 
-  const colors: FoundColor[] = [...counts.entries()]
-    .map(([hex, count]) => ({ hex, count }))
-    .sort((a, b) => b.count - a.count);
+  const inventory = buildColorInventory(allUsages, {
+    pagesScanned,
+    otherSkipped,
+    sortByHue: options.sortByHue ?? false,
+  });
+
+  const dateLabel = new Date().toISOString().slice(0, 10);
+  const page = await buildInventoryPage(inventory, resolved.label, dateLabel);
+
+  await goToPage(page);
 
   return {
-    scope:
-      scope === "selection" && figma.currentPage.selection.length > 0
-        ? "selection"
-        : "page",
-    scannedNodes,
-    colors,
+    pageId: page.id,
+    pageName: page.name,
+    inventory,
   };
 }
 
-function collectSolidPaints(node: SceneNode, counts: Map<string, number>) {
-  const paintSets: unknown[] = [];
-  if ("fills" in node) paintSets.push(node.fills);
-  if ("strokes" in node) paintSets.push(node.strokes);
-
-  for (const paints of paintSets) {
-    if (!Array.isArray(paints)) continue; // skip figma.mixed
-    for (const paint of paints as readonly Paint[]) {
-      if (paint.type !== "SOLID" || paint.visible === false) continue;
-      const hex = rgbToHex(paint.color);
-      counts.set(hex, (counts.get(hex) ?? 0) + 1);
-    }
+async function showPage(payload: { pageId: string }): Promise<void> {
+  const node = await figma.getNodeByIdAsync(payload.pageId);
+  if (node && node.type === "PAGE") {
+    await goToPage(node);
   }
 }
 
-function rgbToHex({ r, g, b }: RGB): string {
-  const toByte = (v: number) =>
-    Math.round(v * 255)
-      .toString(16)
-      .padStart(2, "0")
-      .toUpperCase();
-  return `#${toByte(r)}${toByte(g)}${toByte(b)}`;
+async function goToPage(page: PageNode): Promise<void> {
+  const maybeSet = (
+    figma as unknown as {
+      setCurrentPageAsync?: (p: PageNode) => Promise<void>;
+    }
+  ).setCurrentPageAsync;
+  if (typeof maybeSet === "function") {
+    await maybeSet.call(figma, page);
+  } else {
+    figma.currentPage = page;
+  }
+  if (page.children.length > 0) {
+    figma.viewport.scrollAndZoomIntoView([page.children[0]]);
+  }
 }
