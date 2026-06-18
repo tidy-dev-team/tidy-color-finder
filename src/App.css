@@ -1,0 +1,222 @@
+:root {
+  /* colors — mirrors the parent Tidy DS Toolbox token names */
+  --primary-color: #2563eb;
+  --primary-alpha: #2463eb1a;
+  --primary-hover: #1d4ed8;
+  --light-color: #ffffff;
+  --light-hover: #d1d5db;
+  --border-light: #e5e7eb;
+  --disabled-color: #9ca3af;
+  --panel-color: #fafafa;
+  /* spacings */
+  --pixel-1: 1px;
+  --pixel-2: 2px;
+  --pixel-4: 4px;
+  --pixel-6: 6px;
+  --pixel-8: 8px;
+  --pixel-12: 12px;
+  --pixel-16: 16px;
+  --pixel-20: 20px;
+  --pixel-24: 24px;
+  --pixel-32: 32px;
+  --pixel-40: 40px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Roboto", sans-serif;
+  background: var(--light-color);
+}
+
+h3 {
+  margin-top: 0;
+}
+
+.header {
+  display: flex;
+  gap: var(--pixel-4);
+  align-items: center;
+  background: var(--light-color);
+  border-bottom: var(--pixel-1) solid var(--border-light);
+  padding: var(--pixel-8) var(--pixel-16);
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: var(--pixel-8);
+}
+
+.header h1 .version {
+  font-size: 11px;
+  font-weight: 500;
+  color: #9ca3af;
+  letter-spacing: 0;
+}
+
+.main,
+.viewport {
+  flex: 1;
+  background: var(--light-color);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+}
+
+.viewport-scroll {
+  flex: 1;
+  overflow: auto;
+  width: 100%;
+  padding: var(--pixel-24) 0;
+  margin: 0 auto;
+  scrollbar-color: lightgray transparent;
+}
+
+.viewport-content {
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  height: fit-content;
+}
+
+/* Cards */
+.card {
+  width: 100%;
+  background: var(--light-color);
+  border: var(--pixel-1) solid var(--border-light);
+  border-radius: var(--pixel-8);
+  padding: var(--pixel-20);
+  transition: border-color 0.15s ease;
+}
+
+.card:hover {
+  border-color: var(--light-hover);
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: var(--pixel-16);
+  color: #111827;
+  letter-spacing: -0.01em;
+}
+
+.card-content {
+  color: #4b5563;
+}
+
+/* Form controls */
+.form-control {
+  margin-bottom: var(--pixel-20);
+}
+
+div .form-control:last-of-type {
+  margin-bottom: 0;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--pixel-6);
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  letter-spacing: -0.01em;
+}
+
+.form-control input,
+.form-control textarea {
+  width: 100%;
+  padding: var(--pixel-8) var(--pixel-12);
+  border: var(--pixel-1) solid var(--light-hover);
+  border-radius: var(--pixel-6);
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  background: var(--light-color);
+}
+
+.form-control input:focus,
+.form-control textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.form-error {
+  margin-top: var(--pixel-6);
+  font-size: var(--pixel-12);
+  color: #dc2626;
+}
+
+/* Buttons */
+button {
+  padding: var(--pixel-12, 12px) var(--pixel-16, 16px);
+  background: var(--primary-color);
+  color: var(--light-color);
+  border: none;
+  border-radius: var(--pixel-6);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button:hover {
+  background: var(--primary-hover);
+}
+
+button:active {
+  transform: translateY(var(--pixel-1));
+}
+
+button:disabled {
+  background: var(--disabled-color);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+button.secondary {
+  background-color: var(--light-color);
+  color: var(--primary-color);
+  box-shadow: 0 0 0 var(--pixel-1) var(--primary-color) inset;
+}
+
+/* Status messages */
+.status-message {
+  margin-top: var(--pixel-12);
+  padding: var(--pixel-12) var(--pixel-16);
+  background: #f0f9ff;
+  border: var(--pixel-1) solid #bae6fd;
+  border-radius: var(--pixel-6);
+  font-size: 13px;
+  color: #0c4a6e;
+}
+
+.status-message.success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #065f46;
+}
+
+.status-message.error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}

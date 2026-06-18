@@ -1,0 +1,12 @@
+{
+  "name": "Tidy Color Finder",
+  "id": "tidy-color-finder",
+  "api": "1.0.0",
+  "main": "dist/code.js",
+  "ui": "dist/index.html",
+  "editorType": ["figma"],
+  "permissions": ["currentuser"],
+  "networkAccess": {
+    "allowedDomains": ["none"]
+  }
+}
