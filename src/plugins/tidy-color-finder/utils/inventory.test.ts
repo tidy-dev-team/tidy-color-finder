@@ -13,7 +13,8 @@ const usage = (over: Partial<ColorUsage> = {}): ColorUsage => ({
   opacity: 1,
   role: "background" as ColorRole,
   container: container("c1"),
-  tokenName: null,
+  variableName: null,
+  styleName: null,
   ...over,
 });
 
@@ -47,13 +48,23 @@ describe("buildColorInventory", () => {
     ]);
   });
 
-  it("always emits the three sections in background/text/border order", () => {
+  it("always emits the four sections in background/text/border/icon order", () => {
     const inv = buildColorInventory([], opts());
     expect(inv.sections.map((s) => s.role)).toEqual([
       "background",
       "text",
       "border",
+      "icon",
     ]);
+  });
+
+  it("groups icon usages into the icon section", () => {
+    const inv = buildColorInventory(
+      [usage({ role: "icon", hex: "#ABCDEF" })],
+      opts(),
+    );
+    expect(section(inv, "icon").colors.map((c) => c.hex)).toEqual(["#ABCDEF"]);
+    expect(inv.summary.byRole.icon).toBe(1);
   });
 
   it("dedups by hex + opacity (same hex, different opacity = two colors)", () => {
@@ -177,34 +188,56 @@ describe("buildColorInventory", () => {
     expect(color.whereUsedOverflow).toBe(1);
   });
 
-  it("passes through a token name and treats bound colors as tokenized", () => {
+  it("passes through a variable name and treats variable-bound colors as tokenized", () => {
     const inv = buildColorInventory(
       [
-        usage({ hex: "#123456", tokenName: null }),
-        usage({ hex: "#123456", tokenName: "color/primary" }),
+        usage({ hex: "#123456", variableName: null }),
+        usage({ hex: "#123456", variableName: "color/primary" }),
       ],
       opts(),
     );
     const color = section(inv, "background").colors[0];
-    expect(color.tokenName).toBe("color/primary");
+    expect(color.variableName).toBe("color/primary");
     expect(inv.summary.untokenized).toBe(0);
+  });
+
+  it("merges a variable and a style from different usages of the same color", () => {
+    const inv = buildColorInventory(
+      [
+        usage({ hex: "#123456", variableName: "color/primary", styleName: null }),
+        usage({ hex: "#123456", variableName: null, styleName: "Brand/Primary" }),
+      ],
+      opts(),
+    );
+    const color = section(inv, "background").colors[0];
+    expect(color.variableName).toBe("color/primary");
+    expect(color.styleName).toBe("Brand/Primary");
+  });
+
+  it("treats a style-only color as untokenized (only a variable counts)", () => {
+    const inv = buildColorInventory(
+      [usage({ hex: "#123456", variableName: null, styleName: "Brand/Primary" })],
+      opts(),
+    );
+    expect(inv.summary.untokenized).toBe(1);
   });
 
   it("computes summary totals (unique, by role, untokenized, otherSkipped)", () => {
     const inv = buildColorInventory(
       [
-        usage({ role: "background", hex: "#111111", tokenName: "bg/base" }),
+        usage({ role: "background", hex: "#111111", variableName: "bg/base" }),
         usage({ role: "background", hex: "#222222" }),
         usage({ role: "text", hex: "#333333" }),
         usage({ role: "border", hex: "#444444" }),
+        usage({ role: "icon", hex: "#555555" }),
       ],
       opts({ pagesScanned: 3, otherSkipped: 7 }),
     );
     expect(inv.summary).toEqual({
       pagesScanned: 3,
-      uniqueTotal: 4,
-      byRole: { background: 2, text: 1, border: 1 },
-      untokenized: 3,
+      uniqueTotal: 5,
+      byRole: { background: 2, text: 1, border: 1, icon: 1 },
+      untokenized: 4,
       otherSkipped: 7,
     });
   });

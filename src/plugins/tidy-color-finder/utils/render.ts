@@ -23,6 +23,7 @@ const ROLE_LABELS: Record<ColorRole, string> = {
   background: "Backgrounds",
   text: "Text",
   border: "Borders",
+  icon: "Icons",
 };
 
 // Column widths (px) for table cells.
@@ -30,10 +31,11 @@ const COL = {
   swatch: 28,
   hex: 96,
   hsl: 120,
-  token: 170,
+  variable: 150,
+  style: 150,
   count: 48,
   whereUsed: 280,
-  toToken: 130,
+  toVariable: 130,
 };
 
 export async function buildInventoryPage(
@@ -77,7 +79,7 @@ function buildSummary(inventory: ColorInventory, scopeLabel: string): FrameNode 
 
   const totals =
     `${summary.uniqueTotal} unique color${summary.uniqueTotal === 1 ? "" : "s"} — ` +
-    `${summary.byRole.background} background, ${summary.byRole.text} text, ${summary.byRole.border} border; ` +
+    `${summary.byRole.background} background, ${summary.byRole.text} text, ${summary.byRole.border} border, ${summary.byRole.icon} icon; ` +
     `${summary.untokenized} untokenized`;
   frame.appendChild(text(totals, 13, FONT_REGULAR, INK));
 
@@ -122,10 +124,11 @@ function buildHeaderRow(): FrameNode {
   row.appendChild(cell("", COL.swatch));
   row.appendChild(cell("Hex", COL.hex, FONT_BOLD, MUTED));
   row.appendChild(cell("HSL", COL.hsl, FONT_BOLD, MUTED));
-  row.appendChild(cell("Token", COL.token, FONT_BOLD, MUTED));
+  row.appendChild(cell("Variable", COL.variable, FONT_BOLD, MUTED));
+  row.appendChild(cell("Style", COL.style, FONT_BOLD, MUTED));
   row.appendChild(cell("Count", COL.count, FONT_BOLD, MUTED));
   row.appendChild(cell("Where used", COL.whereUsed, FONT_BOLD, MUTED));
-  row.appendChild(cell("→ Token", COL.toToken, FONT_BOLD, MUTED));
+  row.appendChild(cell("→ Variable", COL.toVariable, FONT_BOLD, MUTED));
   return row;
 }
 
@@ -165,14 +168,23 @@ function buildColorRow(color: InventoryColor): FrameNode {
     ),
   );
 
-  // Token status
-  const tokenLabel = color.tokenName ?? "Raw";
+  // Variable (empty/"Raw" when not bound to a variable)
   row.appendChild(
     cell(
-      tokenLabel,
-      COL.token,
+      color.variableName ?? "Raw",
+      COL.variable,
       FONT_REGULAR,
-      color.tokenName ? INK : MUTED,
+      color.variableName ? INK : MUTED,
+    ),
+  );
+
+  // Style (color style name, or "—" when none)
+  row.appendChild(
+    cell(
+      color.styleName ?? "—",
+      COL.style,
+      FONT_REGULAR,
+      color.styleName ? INK : MUTED,
     ),
   );
 
@@ -182,8 +194,8 @@ function buildColorRow(color: InventoryColor): FrameNode {
   // Where used (node-linked container names)
   row.appendChild(buildWhereUsedCell(color));
 
-  // Empty → Token cell
-  row.appendChild(cell("", COL.toToken, FONT_REGULAR, INK));
+  // Empty → Variable cell
+  row.appendChild(cell("", COL.toVariable, FONT_REGULAR, INK));
 
   return row;
 }

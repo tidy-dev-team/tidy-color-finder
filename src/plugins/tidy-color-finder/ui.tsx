@@ -37,6 +37,7 @@ const DEFAULT_OPTIONS: ScanOptions = {
   includeBackgrounds: true,
   includeText: true,
   includeBorders: true,
+  includeIcons: true,
   skipTokenized: false,
   // On by default: most real text/icon colors live inside component instances,
   // so off-by-default makes the Text table miss almost everything. Turn off to
@@ -165,7 +166,8 @@ export function TidyColorFinderUI() {
     (scopeMode === "selected-pages" && selectedIds.size === 0) ||
     (!options.includeBackgrounds &&
       !options.includeText &&
-      !options.includeBorders);
+      !options.includeBorders &&
+      !options.includeIcons);
 
   return (
     <div
@@ -269,9 +271,14 @@ export function TidyColorFinderUI() {
             checked={options.includeBorders}
             onChange={(v) => setOptions((o) => ({ ...o, includeBorders: v }))}
           />
+          <CheckRow
+            label="Icons (by layer name)"
+            checked={options.includeIcons}
+            onChange={(v) => setOptions((o) => ({ ...o, includeIcons: v }))}
+          />
           <hr style={{ border: 0, borderTop: "1px solid var(--border-light)", margin: "2px 0" }} />
           <CheckRow
-            label="Skip colors already bound to a variable/style"
+            label="Skip colors already bound to a variable"
             checked={options.skipTokenized}
             onChange={(v) => setOptions((o) => ({ ...o, skipTokenized: v }))}
           />
@@ -320,7 +327,8 @@ export function TidyColorFinderUI() {
             {result.inventory.summary.uniqueTotal === 1 ? "" : "s"} —{" "}
             {result.inventory.summary.byRole.background} background,{" "}
             {result.inventory.summary.byRole.text} text,{" "}
-            {result.inventory.summary.byRole.border} border;{" "}
+            {result.inventory.summary.byRole.border} border,{" "}
+            {result.inventory.summary.byRole.icon} icon;{" "}
             {result.inventory.summary.untokenized} untokenized
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

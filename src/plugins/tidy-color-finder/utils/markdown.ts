@@ -15,6 +15,7 @@ const ROLE_LABELS: Record<ColorRole, string> = {
   background: "Backgrounds",
   text: "Text",
   border: "Borders",
+  icon: "Icons",
 };
 
 export function serializeInventoryToMarkdown(
@@ -28,7 +29,8 @@ export function serializeInventoryToMarkdown(
   lines.push(
     `${summary.uniqueTotal} unique color${summary.uniqueTotal === 1 ? "" : "s"} — ` +
       `${summary.byRole.background} background, ${summary.byRole.text} text, ` +
-      `${summary.byRole.border} border; ${summary.untokenized} untokenized ` +
+      `${summary.byRole.border} border, ${summary.byRole.icon} icon; ` +
+      `${summary.untokenized} untokenized ` +
       `(${summary.pagesScanned} page${summary.pagesScanned === 1 ? "" : "s"} scanned).`,
   );
 
@@ -44,10 +46,10 @@ function serializeSection(section: InventorySection): string {
   const lines: string[] = [];
   lines.push(`## ${ROLE_LABELS[section.role]} (${section.colors.length})`);
   lines.push("");
-  lines.push(`| Hex | HSL | Token | Count | Where used |`);
-  lines.push(`| --- | --- | --- | --- | --- |`);
+  lines.push(`| Hex | HSL | Variable | Style | Count | Where used |`);
+  lines.push(`| --- | --- | --- | --- | --- | --- |`);
   if (section.colors.length === 0) {
-    lines.push(`| _none_ |  |  |  |  |`);
+    lines.push(`| _none_ |  |  |  |  |  |`);
   } else {
     for (const color of section.colors) {
       lines.push(serializeRow(color));
@@ -62,9 +64,10 @@ function serializeRow(color: InventoryColor): string {
       ? `${color.hex} · ${Math.round(color.opacity * 100)}%`
       : color.hex;
   const hsl = `H ${color.hsl.h} S ${color.hsl.s} L ${color.hsl.l}`;
-  const token = color.tokenName ?? "Raw";
+  const variable = color.variableName ?? "Raw";
+  const style = color.styleName ?? "—";
   const where = serializeWhereUsed(color);
-  return `| ${hex} | ${hsl} | ${token} | ${color.count} | ${where} |`;
+  return `| ${hex} | ${hsl} | ${variable} | ${style} | ${color.count} | ${where} |`;
 }
 
 function serializeWhereUsed(color: InventoryColor): string {

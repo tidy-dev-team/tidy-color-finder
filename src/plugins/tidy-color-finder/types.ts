@@ -14,9 +14,10 @@
 
 export type TidyColorFinderAction = "list-pages" | "scan-colors" | "show-page";
 
-// The three role tables. Gradient/image paints are counted as "other" and
-// excluded from the tables.
-export type ColorRole = "background" | "text" | "border";
+// The four role tables. Gradient/image paints are counted as "other" and
+// excluded from the tables. "icon" is detected by layer name (see
+// utils/categorize.ts) and wins over background/text for fills only.
+export type ColorRole = "background" | "text" | "border" | "icon";
 
 export type ScopeMode =
   | "current-page"
@@ -34,7 +35,9 @@ export interface ScanOptions {
   includeBackgrounds: boolean;
   includeText: boolean;
   includeBorders: boolean;
-  // Drop colors already bound to a variable/style before aggregating.
+  includeIcons: boolean;
+  // Drop colors already bound to a variable before aggregating. (Style-only
+  // colors are kept — a style is the old way; the goal is variables.)
   skipTokenized: boolean;
   // Descend into the children of component instances.
   lookInsideInstances: boolean;
@@ -79,7 +82,11 @@ export interface ColorUsage {
   opacity: number; // 0..1, paint opacity
   role: ColorRole;
   container: UsageContainer;
-  tokenName: string | null; // variable/style name if bound, else null
+  // Variable name if the paint is bound to a variable — either directly on the
+  // node's paint, or inside the applied color style's paint. Else null.
+  variableName: string | null;
+  // Applied color style (PaintStyle) name, else null.
+  styleName: string | null;
 }
 
 export interface BuildInventoryOptions {
@@ -102,7 +109,8 @@ export interface InventoryColor {
   opacity: number;
   hsl: HSL;
   count: number;
-  tokenName: string | null;
+  variableName: string | null;
+  styleName: string | null;
   whereUsed: UsageContainer[]; // capped
   whereUsedOverflow: number; // "and N more" remainder
 }

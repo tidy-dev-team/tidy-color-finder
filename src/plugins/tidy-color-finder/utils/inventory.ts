@@ -21,13 +21,14 @@ import { hexToHsl } from "./color";
 const DEFAULT_WHERE_USED_CAP = 10;
 
 // Stable role order for the output sections.
-const ROLE_ORDER: ColorRole[] = ["background", "text", "border"];
+const ROLE_ORDER: ColorRole[] = ["background", "text", "border", "icon"];
 
 interface Accumulator {
   hex: string;
   opacity: number;
   count: number;
-  tokenName: string | null;
+  variableName: string | null;
+  styleName: string | null;
   // container id -> { container, count }
   containers: Map<string, { container: UsageContainer; count: number }>;
 }
@@ -54,14 +55,18 @@ export function buildColorInventory(
         hex: usage.hex,
         opacity: usage.opacity,
         count: 0,
-        tokenName: null,
+        variableName: null,
+        styleName: null,
         containers: new Map(),
       };
       roleMap.set(key, acc);
     }
     acc.count += 1;
-    if (acc.tokenName === null && usage.tokenName !== null) {
-      acc.tokenName = usage.tokenName;
+    if (acc.variableName === null && usage.variableName !== null) {
+      acc.variableName = usage.variableName;
+    }
+    if (acc.styleName === null && usage.styleName !== null) {
+      acc.styleName = usage.styleName;
     }
     const existing = acc.containers.get(usage.container.id);
     if (existing) {
@@ -87,12 +92,18 @@ export function buildColorInventory(
     background: sectionCount(sections, "background"),
     text: sectionCount(sections, "text"),
     border: sectionCount(sections, "border"),
+    icon: sectionCount(sections, "icon"),
   };
   const uniqueTotal =
-    byRoleCount.background + byRoleCount.text + byRoleCount.border;
+    byRoleCount.background +
+    byRoleCount.text +
+    byRoleCount.border +
+    byRoleCount.icon;
+  // Untokenized = not bound to a variable. A style-only color still counts as
+  // untokenized (a style is the old way; the goal is variables).
   const untokenized = sections.reduce(
     (sum, section) =>
-      sum + section.colors.filter((c) => c.tokenName === null).length,
+      sum + section.colors.filter((c) => c.variableName === null).length,
     0,
   );
 
@@ -121,7 +132,8 @@ function toInventoryColor(acc: Accumulator, cap: number): InventoryColor {
     opacity: acc.opacity,
     hsl: hexToHsl(acc.hex),
     count: acc.count,
-    tokenName: acc.tokenName,
+    variableName: acc.variableName,
+    styleName: acc.styleName,
     whereUsed,
     whereUsedOverflow,
   };

@@ -2,7 +2,7 @@
 
 import { ColorRole, ColorUsage, ScanOptions, UsageContainer } from "../types";
 import { rgbToHex } from "./color";
-import { roleFor, roundOpacity } from "./categorize";
+import { isIconName, roleFor, roundOpacity } from "./categorize";
 
 /**
  * Figma-bound tree walk. Thin adapter around the pure aggregator: it reads
@@ -16,10 +16,24 @@ export interface ScanResult {
   nodesScanned: number;
 }
 
+// A color style resolved once per scan: its name plus, per paint index, the id
+// of any variable bound to that paint's color (for the "variable inside a
+// style" case).
+interface ResolvedStyle {
+  name: string;
+  paintVariableIds: (string | null)[];
+}
+
 // Caches for token-name resolution within a single scan.
 interface ResolveCaches {
   variables: Map<string, string | null>;
-  styles: Map<string, string | null>;
+  styles: Map<string, ResolvedStyle | null>;
+}
+
+// A node paired with whether it sits inside an icon-named subtree.
+interface QueueItem {
+  node: SceneNode;
+  inIcon: boolean;
 }
 
 export async function collectUsages(
@@ -32,20 +46,36 @@ export async function collectUsages(
   let otherSkipped = 0;
   let nodesScanned = 0;
 
-  const queue: SceneNode[] = [...roots];
+  // Seed each root with the icon state of its real ancestors. For page/all-page
+  // scope roots are top-level (no ancestors), but a current-selection root can
+  // be a deep node whose "icon/…" ancestor is not part of the walk.
+  const queue: QueueItem[] = roots.map((node) => ({
+    node,
+    inIcon: ancestorIsIcon(node),
+  }));
+
   while (queue.length > 0) {
-    const node = queue.shift()!;
+    const { node, inIcon } = queue.shift()!;
     if (node.visible === false) continue;
 
     nodesScanned += 1;
     if (nodesScanned % 250 === 0) onProgress?.(nodesScanned);
 
-    otherSkipped += await collectFromNode(node, options, caches, usages);
+    const nodeIsIcon = inIcon || isIconName(node.name);
+    otherSkipped += await collectFromNode(
+      node,
+      nodeIsIcon,
+      options,
+      caches,
+      usages,
+    );
 
     if ("children" in node) {
       const isInstance = node.type === "INSTANCE";
       if (!isInstance || options.lookInsideInstances) {
-        for (const child of node.children) queue.push(child);
+        for (const child of node.children) {
+          queue.push({ node: child, inIcon: nodeIsIcon });
+        }
       }
     }
   }
@@ -54,28 +84,46 @@ export async function collectUsages(
   return { usages, otherSkipped, nodesScanned };
 }
 
+// Climb a node's real ancestors (up to the page) to see if any is icon-named.
+function ancestorIsIcon(node: SceneNode): boolean {
+  let cur: BaseNode | null = node.parent;
+  while (cur && cur.type !== "PAGE" && cur.type !== "DOCUMENT") {
+    if (isIconName(cur.name)) return true;
+    cur = cur.parent;
+  }
+  return false;
+}
+
 async function collectFromNode(
   node: SceneNode,
+  nodeIsIcon: boolean,
   options: ScanOptions,
   caches: ResolveCaches,
   out: ColorUsage[],
 ): Promise<number> {
+  // A COMPONENT_SET's own fills/strokes are Figma's variant-group chrome (the
+  // dashed wrapper border + faint fill), not design colors. Skip them; the
+  // variants inside are still walked as children.
+  if (node.type === "COMPONENT_SET") return 0;
+
   let otherSkipped = 0;
 
-  // Fills → text role on TEXT nodes, otherwise background.
+  // Fills → icon (if icon-named) / text (TEXT) / background otherwise.
   if ("fills" in node && Array.isArray(node.fills)) {
-    const fillRole: ColorRole = roleFor(node.type, "fill");
+    const fillRole: ColorRole = roleFor(node.type, "fill", nodeIsIcon);
     if (roleIncluded(fillRole, options)) {
-      const styleName = await resolveStyleName(
+      const style = await resolveStyle(
         "fillStyleId" in node ? node.fillStyleId : "",
         caches,
       );
-      for (const paint of node.fills as readonly Paint[]) {
+      const fills = node.fills as readonly Paint[];
+      for (let i = 0; i < fills.length; i++) {
         otherSkipped += await pushPaint(
           node,
-          paint,
+          fills[i],
           fillRole,
-          styleName,
+          style,
+          i,
           options,
           caches,
           out,
@@ -84,19 +132,21 @@ async function collectFromNode(
     }
   }
 
-  // Strokes → border role.
+  // Strokes → border role (icons keep stroke-as-border).
   if ("strokes" in node && Array.isArray(node.strokes)) {
     if (roleIncluded("border", options)) {
-      const styleName = await resolveStyleName(
+      const style = await resolveStyle(
         "strokeStyleId" in node ? node.strokeStyleId : "",
         caches,
       );
-      for (const paint of node.strokes as readonly Paint[]) {
+      const strokes = node.strokes as readonly Paint[];
+      for (let i = 0; i < strokes.length; i++) {
         otherSkipped += await pushPaint(
           node,
-          paint,
+          strokes[i],
           "border",
-          styleName,
+          style,
+          i,
           options,
           caches,
           out,
@@ -113,7 +163,8 @@ async function pushPaint(
   node: SceneNode,
   paint: Paint,
   role: ColorRole,
-  styleName: string | null,
+  style: ResolvedStyle | null,
+  paintIndex: number,
   options: ScanOptions,
   caches: ResolveCaches,
   out: ColorUsage[],
@@ -121,20 +172,25 @@ async function pushPaint(
   if (paint.visible === false) return 0;
   if (paint.type !== "SOLID") return 1; // gradient / image / video
 
-  const variableName = await resolveVariableName(
-    paint.boundVariables?.color?.id,
-    caches,
-  );
-  const tokenName = variableName ?? styleName;
+  // Variable, in priority order: bound directly on the node's paint, else
+  // bound on the matching paint inside the applied style (variable-in-style).
+  const variableId =
+    paint.boundVariables?.color?.id ??
+    style?.paintVariableIds[paintIndex] ??
+    undefined;
+  const variableName = await resolveVariableName(variableId, caches);
+  const styleName = style?.name ?? null;
 
-  if (options.skipTokenized && tokenName !== null) return 0;
+  // "Tokenized" means bound to a variable; a style alone still needs tidying.
+  if (options.skipTokenized && variableName !== null) return 0;
 
   out.push({
     hex: rgbToHex(paint.color.r, paint.color.g, paint.color.b),
     opacity: roundOpacity(paint.opacity ?? 1),
     role,
     container: resolveContainer(node),
-    tokenName,
+    variableName,
+    styleName,
   });
   return 0;
 }
@@ -142,6 +198,7 @@ async function pushPaint(
 function roleIncluded(role: ColorRole, options: ScanOptions): boolean {
   if (role === "background") return options.includeBackgrounds;
   if (role === "text") return options.includeText;
+  if (role === "icon") return options.includeIcons;
   return options.includeBorders;
 }
 
@@ -196,19 +253,27 @@ async function resolveVariableName(
   return name;
 }
 
-async function resolveStyleName(
+async function resolveStyle(
   styleId: string | typeof figma.mixed,
   caches: ResolveCaches,
-): Promise<string | null> {
+): Promise<ResolvedStyle | null> {
   if (typeof styleId !== "string" || styleId === "") return null;
   if (caches.styles.has(styleId)) return caches.styles.get(styleId)!;
-  let name: string | null = null;
+  let resolved: ResolvedStyle | null = null;
   try {
     const style = await figma.getStyleByIdAsync(styleId);
-    name = style ? style.name : null;
+    if (style && style.type === "PAINT") {
+      const paints = (style as PaintStyle).paints;
+      resolved = {
+        name: style.name,
+        paintVariableIds: paints.map((p) =>
+          p.type === "SOLID" ? (p.boundVariables?.color?.id ?? null) : null,
+        ),
+      };
+    }
   } catch {
-    name = null;
+    resolved = null;
   }
-  caches.styles.set(styleId, name);
-  return name;
+  caches.styles.set(styleId, resolved);
+  return resolved;
 }
